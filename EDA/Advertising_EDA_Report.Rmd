@@ -1,0 +1,129 @@
+---
+title: "Advertising_EDA_Report"
+output: html_document
+date: "2025-01-30"
+---
+
+#Libraries and Imports
+```{r}
+# install.packages(c("corrplot", "ggcorrplot", "ggplot2","tidyverse", "tidyr", "dplyr", "readr", "RColorBrewer","interactions","effects","car","mgcv","gridExtra"))
+
+library(corrplot)
+library(ggcorrplot)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(readr)
+library(RColorBrewer)
+library(interactions)
+library(effects)
+library(car)
+library(mgcv)
+library(gridExtra)
+```
+
+#Data Import
+```{r}
+#dataset for analysis
+path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\ad_staging.csv"
+orig <- read.csv(path)
+
+#additional stats from SQL analysis
+stats_path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\summary_stats.csv"
+freq_path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\freq_dist.csv"
+
+data_stats <- read.csv(stats_path)
+data_freq <- read.csv(freq_path)
+
+# verify data imported
+head(orig)
+
+#create copy of data
+data <- orig
+
+#display summary stats
+data_stats
+data_freq
+```
+#EDA
+
+##Bar Plots
+```{r}
+
+#numerical data
+# Create a barplot function
+create_barplot <- function(data, column_name) {
+  ggplot(data, aes(x = !!sym(column_name))) +
+    geom_histogram(fill = "#4169E1", color = "white", bins = 30) +
+    theme_minimal() +
+    labs(
+      title = paste("Distribution of", gsub("_", " ", column_name)),
+      x = gsub("_", " ", column_name),
+      y = "Count"
+    ) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10)
+    )
+}
+
+numerical_columns <- c(
+  "Clicks", 
+  "Time_Spent", 
+  "Engagement_Score",
+  "Conversion_Rate",
+  "Bounce_Rate",
+  "CTR"
+)
+
+plots <- list()
+for (col in numerical_columns) {
+  plots[[col]] <- create_barplot(data, col)
+}
+
+#plot
+grid.arrange(
+  plots[["Clicks"]],
+  plots[["Time_Spent"]],
+  plots[["Engagement_Score"]],
+  plots[["Conversion_Rate"]],
+  plots[["Bounce_Rate"]],
+  plots[["CTR"]],
+  ncol = 2
+)
+
+```
+
+
+
+##Correlation Plot
+```{r}
+
+# Select numerical columns for correlation
+numerical_data <- data %>%
+  select(Clicks, Time_Spent, Engagement_Score, 
+         Conversion_Rate, Bounce_Rate, CTR)
+
+# Calculate correlation matrix
+cor_matrix <- cor(numerical_data)
+
+#plot with ggplot
+ggcorrplot(cor_matrix,
+           hc.order = TRUE,
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("#D73027", "white", "#4575B4")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("correlation_matrix.png", width = 10, height = 8)
+
+```
+
+#### As We can see from our correlatin plot, there is essentially no correlation between the numerical data
+
+> * We do not need to investigate the interactions between these columns further
+
+##Non-Linear Relationships
