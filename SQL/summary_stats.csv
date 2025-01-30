@@ -1,2 +1,7 @@
-Avg_Clicks,Max_Clicks,Min_Clicks,Avg_Time_Spent,Max_Time_Spent,Min_Time_Spent,Avg_Engagement_Score,Max_Engagement_Score,Min_Engagement_Score,Avg_Conversion_Rate,Max_Conversion_Rate,Min_Conversion_Rate,Avg_Bounce_Rate,Max_Bounce_Rate,Min_Bounce_Rate,Avg_CTR,Max_CTR,Min_CTR
-154.9140,300,10,65.8100,120,10,74.8730,100,50,5.468850,9.98,1.00,22.733300,39.99,5.00,7.965180,14.99,1.03
+Metric,Mean,Std_Dev,Min_Value,Q1,Median,Q3,Max_Value
+Bounce_Rate,22.73,9.91,5.00,14.21,22.90,31.48,39.99
+Clicks,154.91,82.56,10.00,85.00,156.00,224.00,300.00
+Conversion_Rate,5.47,2.6,1.00,3.17,5.48,7.71,9.98
+CTR,7.97,3.93,1.03,4.64,8.03,11.09,14.99
+Engagement_Score,74.87,14.8,50.00,62.00,75.00,88.00,100.00
+Time_Spent,65.81,31.86,10.00,39.00,65.00,94.00,120.00

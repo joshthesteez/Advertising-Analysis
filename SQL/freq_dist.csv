@@ -12,6 +12,9 @@ Device_Type,Desktop,296,29.60%
 Device_Type,Tablet,103,10.30%
 Gender,F,503,50.30%
 Gender,M,497,49.70%
+User_Movement_Data,"movement only",403,40.30%
+User_Movement_Data,"gaze, movement",384,38.40%
+User_Movement_Data,"no movement",213,21.30%
 Visual_Complexity,Medium,504,50.40%
 Visual_Complexity,High,293,29.30%
 Visual_Complexity,Low,203,20.30%
