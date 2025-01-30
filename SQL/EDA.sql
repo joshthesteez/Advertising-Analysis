@@ -86,26 +86,92 @@ SELECT
 FROM ad_staging;
 
 -- summary statistics (numerical columns)
-SELECT
-    AVG(Clicks) AS Avg_Clicks,
-    MAX(Clicks) AS Max_Clicks,
-    MIN(Clicks) AS Min_Clicks,
-    AVG(Time_Spent) AS Avg_Time_Spent,
-    MAX(Time_Spent) AS Max_Time_Spent,
-    MIN(Time_Spent) AS Min_Time_Spent,
-	AVG(Engagement_Score) AS Avg_Engagement_Score,
-    MAX(Engagement_Score) AS Max_Engagement_Score,
-    MIN(Engagement_Score) AS Min_Engagement_Score,
-	AVG(Conversion_Rate) AS Avg_Conversion_Rate,
-    MAX(Conversion_Rate) AS Max_Conversion_Rate,
-    MIN(Conversion_Rate) AS Min_Conversion_Rate,
-	AVG(Bounce_Rate) AS Avg_Bounce_Rate,
-    MAX(Bounce_Rate) AS Max_Bounce_Rate,
-    MIN(Bounce_Rate) AS Min_Bounce_Rate,
-	AVG(CTR) AS Avg_CTR,
-    MAX(CTR) AS Max_CTR,
-    MIN(CTR) AS Min_CTR
-FROM ad_staging;
+WITH Metrics AS (
+    -- Group 1: Click Metrics
+    SELECT 
+        'Clicks' as Metric,
+        Clicks as Value
+    FROM ad_staging
+    
+    UNION ALL
+    
+    -- Group 2: Time and Engagement Metrics
+    SELECT 
+        'Time_Spent' as Metric,
+        Time_Spent as Value
+    FROM ad_staging
+    
+    UNION ALL
+    
+    SELECT 
+        'Engagement_Score' as Metric,
+        Engagement_Score as Value
+    FROM ad_staging
+    
+    UNION ALL
+    
+    -- Group 3: Rate Metrics
+    SELECT 
+        'Conversion_Rate' as Metric,
+        Conversion_Rate as Value
+    FROM ad_staging
+    
+    UNION ALL
+    
+    SELECT 
+        'Bounce_Rate' as Metric,
+        Bounce_Rate as Value
+    FROM ad_staging
+    
+    UNION ALL
+    
+    SELECT 
+        'CTR' as Metric,
+        CTR as Value
+    FROM ad_staging
+),
+RankedMetrics AS (
+    SELECT 
+        Metric,
+        Value,
+        ROW_NUMBER() OVER (PARTITION BY Metric ORDER BY Value) as rn,
+        COUNT(*) OVER (PARTITION BY Metric) as total_count
+    FROM (
+        -- All numerical metrics
+        SELECT 'Clicks' as Metric, Clicks as Value FROM ad_staging
+        UNION ALL
+        SELECT 'Time_Spent', Time_Spent FROM ad_staging
+        UNION ALL
+        SELECT 'Engagement_Score', Engagement_Score FROM ad_staging
+        UNION ALL
+        SELECT 'Conversion_Rate', Conversion_Rate FROM ad_staging
+        UNION ALL
+        SELECT 'Bounce_Rate', Bounce_Rate FROM ad_staging
+        UNION ALL
+        SELECT 'CTR', CTR FROM ad_staging
+    ) as combined_metrics
+)
+SELECT 
+    Metric,
+    ROUND(AVG(Value), 2) as Mean,
+    ROUND(STDDEV(Value), 2) as Std_Dev,
+    MIN(Value) as Min_Value,
+    ROUND(AVG(CASE 
+        WHEN rn IN (FLOOR(total_count * 0.25), CEIL(total_count * 0.25)) 
+        THEN Value 
+    END), 2) as Q1,
+    ROUND(AVG(CASE 
+        WHEN rn IN (FLOOR(total_count * 0.5), CEIL(total_count * 0.5)) 
+        THEN Value 
+    END), 2) as Median,
+    ROUND(AVG(CASE 
+        WHEN rn IN (FLOOR(total_count * 0.75), CEIL(total_count * 0.75)) 
+        THEN Value 
+    END), 2) as Q3,
+    MAX(Value) as Max_Value
+FROM RankedMetrics
+GROUP BY Metric
+ORDER BY Metric;
 
 -- frequency distribution (categorical columns)
 WITH CategoryCounts AS (
