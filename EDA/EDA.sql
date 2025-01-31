@@ -68,6 +68,9 @@ SELECT * FROM ad_staging
 ORDER BY Ad_ID
 LIMIT 5;
 
+SELECT * FROM ad_staging
+ORDER BY Ad_ID;
+
 -- Check For Missing Data
 SELECT
 	COUNT(*) AS Total_rows,

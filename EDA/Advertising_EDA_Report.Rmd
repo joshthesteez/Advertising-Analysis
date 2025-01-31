@@ -4,7 +4,8 @@ output: html_document
 date: "2025-01-30"
 ---
 
-#Libraries and Imports
+# Libraries and Imports
+
 ```{r}
 # install.packages(c("corrplot", "ggcorrplot", "ggplot2","tidyverse", "tidyr", "dplyr", "readr", "RColorBrewer","interactions","effects","car","mgcv","gridExtra"))
 
@@ -23,32 +24,97 @@ library(mgcv)
 library(gridExtra)
 ```
 
-#Data Import
+# Data Import
 ```{r}
-#dataset for analysis
+#load staging data from SQL analysis
 path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\ad_staging.csv"
 orig <- read.csv(path)
 
 #additional stats from SQL analysis
 stats_path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\summary_stats.csv"
 freq_path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\freq_dist.csv"
+mvals_path <- "C:\\Users\\jbeas\\OneDrive\\Desktop\\Projects\\Advertising\\missing_vals.csv"
 
 data_stats <- read.csv(stats_path)
 data_freq <- read.csv(freq_path)
+data_mvals <- read.csv(mvals_path)
 
 # verify data imported
 head(orig)
 
 #create copy of data
 data <- orig
+```
+# EDA
 
-#display summary stats
+## Summary Stats
+```{r}
+#check for missing vals
+data_mvals
+
+#summary stats
 data_stats
 data_freq
-```
-#EDA
 
-##Bar Plots
+#create copies for plotting
+stats <- data_stats
+freq <- data_freq
+
+#metric distribution
+metrics_long <- stats %>%
+  select(Metric, Q1, Median, Q3) %>%
+  pivot_longer(cols = c(Q1, Median, Q3),
+               names_to = "Statistic",
+               values_to = "Value")
+
+p1 <- ggplot(metrics_long, aes(x = Metric, y = Value, fill = Statistic)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Metric Distributions",
+       x = "Metric",
+       y = "Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("#82CA9D", "#8884D8", "#FFC658"))
+
+#frequency distribution
+p2 <- ggplot(freq, aes(x = paste(Category, Value, sep = "-"), y = Percentage)) +
+  geom_bar(stat = "identity", fill = "#8884D8") +
+  theme_minimal() +
+  labs(title = "Category Distribution",
+       x = "Category",
+       y = "Percentage (%)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Print plots
+print(p1)
+print(p2)
+
+#save
+ggsave("visualizations\\metric_distributions.png", p1, width = 10, height = 6,)
+ggsave("visualizations\\category_distribution.png", p2, width = 10, height = 6)
+```
+### At a glance: 
+
+- Bounce Rate, Conversion Rate, CTR and Engagement Score all have fairly even distributions
+
+- Clicks and Time Spent have a much more variance (higher Q1, Q3 values compared to median)
+
+- We can use 'Q' values as a *'performance benchmark'* for future campaigns
+  - If a campaign's metrics fall *below the Q1 value*, it is **underperforming**
+  - If a campaign's metrics fall *above the Q3 value*, it is **successful**
+  - anything in between means the ad is performing as expected
+
+## Areas to Investigate:
+
+- **METRICS:** Clicks, Time Spent, Engagement Score, Conversion Rate, Bounce Rate, CTR
+
+- 3D and AR ads are the most common Ad Types, but are they more successful than 2D?
+- What impact does Visual Complexity have on our performance metrics?
+- What is the relationship between Visual Complexity and User Movement, does this effect our metrics?
+- What characteristics of an ad yields the highest metrics?
+  - What characteristics effect Clicks, Time Spent Conversion Rate Bounce Rate and CTR the most?
+
+## Bar Plots
 ```{r}
 
 #numerical data
@@ -94,11 +160,12 @@ grid.arrange(
   ncol = 2
 )
 
+#save
+ggsave("visualizations\\numerical_distributions.png", width = 10, height = 8)
+
 ```
 
-
-
-##Correlation Plot
+## Correlation Plot
 ```{r}
 
 # Select numerical columns for correlation
@@ -109,6 +176,9 @@ numerical_data <- data %>%
 # Calculate correlation matrix
 cor_matrix <- cor(numerical_data)
 
+#print matrix
+print(cor_matrix)
+
 #plot with ggplot
 ggcorrplot(cor_matrix,
            hc.order = TRUE,
@@ -118,12 +188,785 @@ ggcorrplot(cor_matrix,
            colors = c("#D73027", "white", "#4575B4")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("correlation_matrix.png", width = 10, height = 8)
+ggsave("visualizations\\correlation_matrix.png", width = 10, height = 8)
 
 ```
 
-#### As We can see from our correlatin plot, there is essentially no correlation between the numerical data
+### Looking at the Barplots and Correlation matrix:
+
+- Our data is not normally distributed, so linear modeling/analysis will not be that useful
+- There are no strong correlations between any of the numerical columns
 
 > * We do not need to investigate the interactions between these columns further
 
-##Non-Linear Relationships
+# Non-Linear Relationships
+
+## Ad Type vs. Engagement Score
+
+### Kruskall Test
+> * Null Hypothesis: 3D and AR ads are more effective than 2D ads
+> * Alternative Hypothesis: 3D and AR ads are not more successful than 2D ads
+
+```{r}
+# 2. Kruskal-Wallis Test with detailed interpretation
+e_score <- kruskal.test(Engagement_Score ~ Ad_Type, data = data)
+c_score <- kruskal.test(Clicks ~ Ad_Type, data = data)
+t_score <- kruskal.test(Time_Spent ~ Ad_Type, data = data)
+ctr_score <- kruskal.test(CTR ~ Ad_Type, data = data)
+
+# Create results dataframe with more detailed information
+results <- data.frame(
+  Metric = c("Engagement Score", "Clicks", "Time Spent", "CTR"),
+  p_value = c(e_score$p.value, c_score$p.value, t_score$p.value, ctr_score$p.value),
+  statistic = c(e_score$statistic, c_score$statistic, t_score$statistic, ctr_score$statistic)
+)
+
+# Add interpretation columns
+results <- results %>%
+  mutate(
+    Significance = case_when(
+      p_value < 0.01 ~ "Highly Significant",
+      p_value < 0.05 ~ "Significant",
+      TRUE ~ "Not Significant"
+    ),
+    Interpretation = case_when(
+      p_value < 0.05 ~ "There are significant differences between ad types",
+      TRUE ~ "No significant differences between ad types"
+    )
+  ) %>%
+  mutate(
+    p_value = round(p_value, 4),
+    statistic = round(statistic, 2)
+  )
+
+# Print formatted results
+print("Analysis of Ad Type Effects on Performance Metrics")
+print("------------------------------------------------")
+for(i in 1:nrow(results)) {
+  cat(sprintf("\nMetric: %s", results$Metric[i]))
+  cat(sprintf("\n- P-value: %f", results$p_value[i]))
+  cat(sprintf("\n- Chi-squared statistic: %f", results$statistic[i]))
+  cat(sprintf("\n- Result: %s", results$Significance[i]))
+  cat(sprintf("\n- Interpretation: %s\n", results$Interpretation[i]))
+}
+
+# Create summary statement
+significant_metrics <- results$Metric[results$p_value < 0.05]
+cat("\nSummary:\n")
+if(length(significant_metrics) > 0) {
+  cat("The following metrics show significant differences between ad types:\n")
+  cat(paste("-", significant_metrics, collapse = "\n"))
+  cat("\n\nThis suggests that ad type does influence these performance metrics.")
+} else {
+  cat("None of the metrics showed significant differences between ad types.\n")
+  cat("This suggests that ad type may not be a determining factor in ad performance.")
+}
+```
+### Boxplots
+> - Visualize our findings
+
+```{r}
+#function to create a boxplot for a given metric
+create_boxplot <- function(data, metric_name) {
+  ggplot(data, aes(x = Ad_Type, y = .data[[metric_name]])) +
+    geom_boxplot(aes(fill = Ad_Type)) +
+    theme_minimal() +
+    labs(title = paste(metric_name, "Distribution by Ad Type"),
+         x = "Ad Type",
+         y = metric_name) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 10),  
+      legend.position = "none"  
+    )
+}
+
+#compare across all metrics
+metrics <- c("Engagement_Score", "Clicks", "Time_Spent", "CTR")
+plot_list <- lapply(metrics, function(metric) create_boxplot(data, metric))
+
+#2x2 grid for plots
+grid.arrange(
+  plot_list[[1]], plot_list[[2]], 
+  plot_list[[3]], plot_list[[4]], 
+  ncol = 2
+)
+
+#save
+ggsave("visualizations\\ad_type_metrics_comparison.png", 
+       arrangeGrob(
+         plot_list[[1]], plot_list[[2]], 
+         plot_list[[3]], plot_list[[4]], 
+         ncol = 2
+       ), 
+       width = 12, height = 10)
+```
+
+> - Based on our results, we see that while Ad Type does not have any significant effect on our target metrics, we still do know that 3D ads and AR ads are more popular based on the barplot from earlier.
+
+### Interactions between Ad Type and Visual Complexity
+```{r}
+# First, convert Visual_Complexity to factor with specified order
+data$Visual_Complexity <- factor(data$Visual_Complexity, 
+                               levels = c("Low", "Medium", "High"))
+
+# Function to create interaction plot for a given metric
+create_interaction_plot <- function(data, metric_name) {
+  ggplot(data, aes(x = Visual_Complexity, y = .data[[metric_name]], 
+                   color = Ad_Type, group = Ad_Type)) +
+    stat_summary(fun = mean, geom = "point", size = 2) +
+    stat_summary(fun = mean, geom = "line") +
+    stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+    theme_minimal() +
+    labs(title = paste(metric_name, "by Visual Complexity and Ad Type"),
+         y = metric_name) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 10)
+    )
+}
+
+
+# Create plots for all metrics
+metrics <- c("Engagement_Score", "Clicks", "Time_Spent", "CTR")
+interaction_plots <- lapply(metrics, function(metric) create_interaction_plot(data, metric))
+
+# Arrange plots in a 2x2 grid
+grid.arrange(
+  interaction_plots[[1]], interaction_plots[[2]], 
+  interaction_plots[[3]], interaction_plots[[4]], 
+  ncol = 2
+)
+
+#save
+ggsave("visualizations\\interaction_plots.png", 
+       arrangeGrob(
+         interaction_plots[[1]], interaction_plots[[2]], 
+         interaction_plots[[3]], interaction_plots[[4]], 
+         ncol = 2
+       ), 
+       width = 12, height = 10)
+
+# Create empty list to store results
+results <- list()
+
+# Run ANOVA for each metric and store results
+for (metric in metrics) {
+  # Create formula and run ANOVA
+  formula <- as.formula(paste(metric, "~ Ad_Type * Visual_Complexity"))
+  model <- aov(formula, data = data)
+  
+  # Store results
+  results[[metric]] <- summary(model)[[1]]
+}
+
+# Print results in a clear format
+cat("Interaction Analysis Results:\n")
+cat("==========================\n\n")
+
+for (metric in metrics) {
+  cat(sprintf("Metric: %s\n", metric))
+  cat("------------------\n")
+  
+  # Extract interaction p-value
+  p_val <- results[[metric]]["Ad_Type:Visual_Complexity", "Pr(>F)"]
+  f_val <- results[[metric]]["Ad_Type:Visual_Complexity", "F value"]
+  
+  cat(sprintf("F-value: %.3f\n", f_val))
+  cat(sprintf("p-value: %.4f\n", p_val))
+  cat(sprintf("Significant: %s\n\n", ifelse(p_val < 0.05, "Yes", "No")))
+}
+
+```
+> - This test tells us that how long users spend with an ad (Time Spent) depends on both the Ad Type AND Visual Complexity working together, the other metrics are not affected by Visual Complexity
+
+### Exploring the effects of Ad Type and Visual Complexity on Time Spent
+```{r}
+# 1. Focused Time Spent Interaction Plot with Enhanced Details
+time_spent_plot <- ggplot(data, aes(x = Visual_Complexity, y = Time_Spent, 
+                                   color = Ad_Type, group = Ad_Type)) +
+    stat_summary(fun = mean, geom = "point") +
+    stat_summary(fun = mean, geom = "line") +
+    stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+    theme_minimal() +
+    labs(title = "Interaction Effect: Ad Type and Visual Complexity on Time Spent",
+         subtitle = "Error bars represent standard error of the mean",
+         y = "Time Spent (seconds)") +
+    scale_color_brewer(palette = "Set2") +
+    theme(
+      legend.position = "right",
+      plot.title = element_text(size = 12, face = "bold"),
+      axis.title = element_text(size = 10),
+      legend.title = element_text(size = 10)
+    )
+
+# 2. Post-hoc analysis
+# Perform Tukey's HSD test
+tukey_model <- aov(Time_Spent ~ Ad_Type * Visual_Complexity, data = data)
+tukey_results <- TukeyHSD(tukey_model, which = "Ad_Type:Visual_Complexity")
+
+# Filter significant comparisons (p < 0.05)
+sig_comparisons <- as.data.frame(tukey_results$`Ad_Type:Visual_Complexity`)
+sig_comparisons$comparison <- rownames(sig_comparisons)
+sig_comparisons <- sig_comparisons[sig_comparisons$`p adj` < 0.05, ]
+
+# Print significant differences
+cat("\nSignificant differences in Time Spent:\n")
+cat("====================================\n")
+if(nrow(sig_comparisons) > 0) {
+  for(i in 1:nrow(sig_comparisons)) {
+    cat(sprintf("\n%s:\n", sig_comparisons$comparison[i]))
+    cat(sprintf("Difference: %.2f seconds\n", sig_comparisons$diff[i]))
+    cat(sprintf("Adjusted p-value: %.4f\n", sig_comparisons$`p adj`[i]))
+  }
+} else {
+  cat("No pairwise comparisons were significant at p < 0.05\n")
+}
+
+# Additional insight: Check effect sizes within each Visual Complexity level
+cat("\nEffect Sizes within Visual Complexity Levels:\n")
+cat("==========================================\n")
+for(complexity in levels(data$Visual_Complexity)) {
+  subset_data <- data[data$Visual_Complexity == complexity, ]
+  effect_size <- summary(aov(Time_Spent ~ Ad_Type, data = subset_data))[[1]]
+  cat(sprintf("\nVisual Complexity: %s\n", complexity))
+  cat(sprintf("F-value: %.3f\n", effect_size$`F value`[1]))
+  cat(sprintf("p-value: %.4f\n", effect_size$`Pr(>F)`[1]))
+}
+
+# Display the focused plot
+print(time_spent_plot)
+
+#save
+ggsave("visualizations\\time_spent_interaction_plot.png", time_spent_plot, width = 10, height = 6)
+```
+
+- Looking further we see that AR Ads are most effective at Low and High Complexities
+- At Medium Complexity, each Ad Type performs similarly
+
+Verifying from our Tukeys HSD test:
+> * Low Complexity: Moderate effect (F = 3.593, p = 0.0293) - Ad types do differ significantly
+> * Medium Complexity: No significant effect (F = 0.274, p = 0.7603) - Ad types perform similarly
+> * High Complexity: Strongest effect (F = 6.928, p = 0.0012) - Ad types show very significant differences
+
+### Relationship between Visual Complexity and User Movement
+```{r, fig.width=12, fig.height=10}
+# Select relevant columns for correlation
+correlation_data <- data %>%
+  select(Visual_Complexity_Numeric, Movement_Numeric, 
+         Clicks, Time_Spent, Engagement_Score,
+         Conversion_Rate, Bounce_Rate, CTR)
+
+# Rename columns for better visualization
+colnames(correlation_data) <- c("Visual_Complexity", "User_Movement",
+                               "Clicks", "Time_Spent", "Engagement_Score",
+                               "Conversion_Rate", "Bounce_Rate", "CTR")
+
+# Calculate correlation matrix
+cor_matrix <- cor(correlation_data)
+
+# Create correlation plot
+ggcorrplot(cor_matrix,
+           hc.order = TRUE,
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("#6D9EC1", "white", "#E46726"),
+           title = "Correlation Matrix: Visual Complexity, User Movement, and Metrics",
+           ggtheme = theme_minimal()) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(hjust = 1)
+  )
+
+# Add statistical significance tests
+correlation_tests <- data.frame(
+  Variable1 = character(),
+  Variable2 = character(),
+  Correlation = numeric(),
+  P_Value = numeric()
+)
+
+variables <- colnames(correlation_data)
+for(i in 1:(length(variables)-1)) {
+  for(j in (i+1):length(variables)) {
+    test <- cor.test(correlation_data[[variables[i]]], 
+                    correlation_data[[variables[j]]])
+    correlation_tests <- rbind(correlation_tests, 
+                             data.frame(Variable1 = variables[i],
+                                      Variable2 = variables[j],
+                                      Correlation = test$estimate,
+                                      P_Value = test$p.value))
+  }
+}
+
+# Display significant correlations (p < 0.05)
+cat("\nStatistically Significant Correlations (p < 0.05):\n\n")
+
+significant_cors <- correlation_tests %>%
+  filter(P_Value < 0.05) %>%
+  arrange(P_Value) %>%
+  mutate(
+    Correlation = round(Correlation, 3),
+    P_Value = round(P_Value, 4)
+  )
+
+# Print each correlation clearly
+for(i in 1:nrow(significant_cors)) {
+  cat(sprintf("%s and %s:\n", 
+              significant_cors$Variable1[i], 
+              significant_cors$Variable2[i]))
+  cat(sprintf("  Correlation: %.3f\n", significant_cors$Correlation[i]))
+  cat(sprintf("  P-value: %.4f\n\n", significant_cors$P_Value[i]))
+}
+```
+Looking at the correlation plot, we dont see any strong correlations between Visual Complexity and User Movement or any of the other metrics
+
+Visual Complexity and Bounce Rate:
+> * very weak positive correlation
+> * it is statistically significant (p < 0.01), however the practical effect is unnoticeable
+
+Engagement Score and Bounce Rate 
+> * very weak negative correlation
+> * it is statistically significant (p < 0.05), however again, the practical effect is unnoticeable
+
+# Ad Characteristics Analysis
+Now here's the interesting part, lets see which characteristics have the greatest impact on our metrics
+
+### Analysis of Ad Type Performance
+```{r, fig.width=15, fig.height=10}
+# Create summary statistics for Ad Type
+ad_type_summary <- data %>%
+  group_by(Ad_Type) %>%
+  summarise(across(c(Clicks, Time_Spent, Engagement_Score, 
+                    Conversion_Rate, Bounce_Rate, CTR),
+                  list(
+                    mean = ~mean(.x, na.rm = TRUE),
+                    sd = ~sd(.x, na.rm = TRUE)
+                  )),
+           n = n()) %>%
+  ungroup()
+
+# Print summary statistics
+cat("Summary Statistics by Ad Type:\n")
+print(ad_type_summary)
+
+# Function to create a single metric plot
+plot_metric <- function(data, metric_name) {
+  ggplot(data, aes(x = Ad_Type, y = !!sym(paste0(metric_name, "_mean")))) +
+    geom_bar(stat = "identity", fill = "#4169E1", alpha = 0.7) +
+    geom_errorbar(aes(ymin = !!sym(paste0(metric_name, "_mean")) - !!sym(paste0(metric_name, "_sd")),
+                      ymax = !!sym(paste0(metric_name, "_mean")) + !!sym(paste0(metric_name, "_sd"))),
+                  width = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Average", gsub("_", " ", metric_name), "by Ad Type"),
+         x = "Ad Type",
+         y = paste("Average", gsub("_", " ", metric_name))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5, size = 12))
+}
+
+# Create plots for each metric
+metrics <- c("Clicks", "Time_Spent", "Engagement_Score", 
+            "Conversion_Rate", "Bounce_Rate", "CTR")
+
+plots <- lapply(metrics, function(metric) plot_metric(ad_type_summary, metric))
+
+# Display plots in a grid with proper spacing
+grid.arrange(grobs = plots,
+            ncol = 2,
+            widths = c(1, 1),
+            heights = c(1, 1, 1),
+            padding = unit(2, "line"))
+
+# Perform ANOVA tests for each metric
+cat("\nStatistical Analysis for Ad Type:\n")
+for (metric in metrics) {
+  cat(paste("\n", gsub("_", " ", metric), "ANOVA Results:\n"))
+  model <- aov(as.formula(paste(metric, "~ Ad_Type")), data = data)
+  print(summary(model))
+  
+  # If ANOVA is significant, perform Tukey's test
+  if (summary(model)[[1]]$"Pr(>F)"[1] < 0.05) {
+    cat("\nTukey's HSD Test Results:\n")
+    print(TukeyHSD(model))
+  }
+}
+
+# Create a summary table of best performing ad types
+best_performers <- data.frame(
+  Metric = character(),
+  Best_Ad_Type = character(),
+  Mean_Value = numeric(),
+  Significant = character()
+)
+
+for (metric in metrics) {
+  # Get best performing ad type
+  best_idx <- which.max(ad_type_summary[[paste0(metric, "_mean")]])
+  
+  # Check significance
+  model <- aov(as.formula(paste(metric, "~ Ad_Type")), data = data)
+  is_significant <- summary(model)[[1]]$"Pr(>F)"[1] < 0.05
+  
+  best_performers <- rbind(best_performers, data.frame(
+    Metric = metric,
+    Best_Ad_Type = ad_type_summary$Ad_Type[best_idx],
+    Mean_Value = round(ad_type_summary[[paste0(metric, "_mean")]][best_idx], 2),
+    Significant = ifelse(is_significant, "Yes", "No")
+  ))
+}
+
+cat("\nBest Performing Ad Types for Each Metric:\n")
+print(best_performers)
+```
+
+### Analysis of Age Group Performance
+```{r, fig.width=15, fig.height=10}
+# Create summary statistics for Ad Type
+age_group_summary <- data %>%
+  group_by(Age_Group) %>%
+  summarise(across(c(Clicks, Time_Spent, Engagement_Score, 
+                    Conversion_Rate, Bounce_Rate, CTR),
+                  list(
+                    mean = ~mean(.x, na.rm = TRUE),
+                    sd = ~sd(.x, na.rm = TRUE)
+                  )),
+           n = n()) %>%
+  ungroup()
+
+# Print summary statistics
+cat("Summary Statistics by Age Group:\n")
+print(age_group_summary)
+
+# Function to create a single metric plot
+plot_metric <- function(data, metric_name) {
+  ggplot(data, aes(x = Age_Group, y = !!sym(paste0(metric_name, "_mean")))) +
+    geom_bar(stat = "identity", fill = "#CC0033", alpha = 0.7) +
+    geom_errorbar(aes(ymin = !!sym(paste0(metric_name, "_mean")) - !!sym(paste0(metric_name, "_sd")),
+                      ymax = !!sym(paste0(metric_name, "_mean")) + !!sym(paste0(metric_name, "_sd"))),
+                  width = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Average", gsub("_", " ", metric_name), "by Age Group"),
+         x = "Age Group",
+         y = paste("Average", gsub("_", " ", metric_name))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5, size = 12))
+}
+
+# Create plots for each metric
+metrics <- c("Clicks", "Time_Spent", "Engagement_Score", 
+            "Conversion_Rate", "Bounce_Rate", "CTR")
+
+plots <- lapply(metrics, function(metric) plot_metric(age_group_summary, metric))
+
+# Display plots in a grid with proper spacing
+grid.arrange(grobs = plots,
+            ncol = 2,
+            widths = c(1, 1),
+            heights = c(1, 1, 1),
+            padding = unit(2, "line"))
+
+# Perform ANOVA tests for each metric
+cat("\nStatistical Analysis for Age Group:\n")
+for (metric in metrics) {
+  cat(paste("\n", gsub("_", " ", metric), "ANOVA Results:\n"))
+  model <- aov(as.formula(paste(metric, "~ Age_Group")), data = data)
+  print(summary(model))
+  
+  # If ANOVA is significant, perform Tukey's test
+  if (summary(model)[[1]]$"Pr(>F)"[1] < 0.05) {
+    cat("\nTukey's HSD Test Results:\n")
+    print(TukeyHSD(model))
+  }
+}
+
+# Create a summary table of best performing ad types
+best_performers <- data.frame(
+  Metric = character(),
+  Best_Age_Group = character(),
+  Mean_Value = numeric(),
+  Significant = character()
+)
+
+for (metric in metrics) {
+  # Get best performing ad type
+  best_idx <- which.max(age_group_summary[[paste0(metric, "_mean")]])
+  
+  # Check significance
+  model <- aov(as.formula(paste(metric, "~ Age_Group")), data = data)
+  is_significant <- summary(model)[[1]]$"Pr(>F)"[1] < 0.05
+  
+  best_performers <- rbind(best_performers, data.frame(
+    Metric = metric,
+    Best_Age_Group = age_group_summary$Age_Group[best_idx],
+    Mean_Value = round(age_group_summary[[paste0(metric, "_mean")]][best_idx], 2),
+    Significant = ifelse(is_significant, "Yes", "No")
+  ))
+}
+
+cat("\nMost Impacted Age Groups for Each Metric:\n")
+print(best_performers)
+```
+### Analysis of Device Type Performance
+```{r, fig.width=15, fig.height=10}
+# Create summary statistics for Device Type
+device_type_summary <- data %>%
+  group_by(Device_Type) %>%
+  summarise(across(c(Clicks, Time_Spent, Engagement_Score, 
+                    Conversion_Rate, Bounce_Rate, CTR),
+                  list(
+                    mean = ~mean(.x, na.rm = TRUE),
+                    sd = ~sd(.x, na.rm = TRUE)
+                  )),
+           n = n()) %>%
+  ungroup()
+
+# Print summary statistics
+cat("Summary Statistics by Device Type:\n")
+print(device_type_summary)
+
+# Function to create a single metric plot
+plot_metric <- function(data, metric_name) {
+  ggplot(data, aes(x = Device_Type, y = !!sym(paste0(metric_name, "_mean")))) +
+    geom_bar(stat = "identity", fill = "#FFD700", alpha = 0.7) +  # Changed to yellow
+    geom_errorbar(aes(ymin = !!sym(paste0(metric_name, "_mean")) - !!sym(paste0(metric_name, "_sd")),
+                      ymax = !!sym(paste0(metric_name, "_mean")) + !!sym(paste0(metric_name, "_sd"))),
+                  width = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Average", gsub("_", " ", metric_name), "by Device Type"),
+         x = "Device Type",
+         y = paste("Average", gsub("_", " ", metric_name))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5, size = 12))
+}
+
+# Create plots for each metric
+metrics <- c("Clicks", "Time_Spent", "Engagement_Score", 
+            "Conversion_Rate", "Bounce_Rate", "CTR")
+
+plots <- lapply(metrics, function(metric) plot_metric(device_type_summary, metric))
+
+# Display plots in a grid with proper spacing
+grid.arrange(grobs = plots,
+            ncol = 2,
+            widths = c(1, 1),
+            heights = c(1, 1, 1),
+            padding = unit(2, "line"))
+
+# Perform ANOVA tests for each metric
+cat("\nStatistical Analysis for Device Type:\n")
+for (metric in metrics) {
+  cat(paste("\n", gsub("_", " ", metric), "ANOVA Results:\n"))
+  model <- aov(as.formula(paste(metric, "~ Device_Type")), data = data)
+  print(summary(model))
+  
+  # If ANOVA is significant, perform Tukey's test
+  if (summary(model)[[1]]$"Pr(>F)"[1] < 0.05) {
+    cat("\nTukey's HSD Test Results:\n")
+    print(TukeyHSD(model))
+  }
+}
+
+# Create a summary table of best performing device types
+best_performers <- data.frame(
+  Metric = character(),
+  Best_Device_Type = character(),
+  Mean_Value = numeric(),
+  Significant = character()
+)
+
+for (metric in metrics) {
+  # Get best performing device type
+  best_idx <- which.max(device_type_summary[[paste0(metric, "_mean")]])
+  
+  # Check significance
+  model <- aov(as.formula(paste(metric, "~ Device_Type")), data = data)
+  is_significant <- summary(model)[[1]]$"Pr(>F)"[1] < 0.05
+  
+  best_performers <- rbind(best_performers, data.frame(
+    Metric = metric,
+    Best_Device_Type = device_type_summary$Device_Type[best_idx],
+    Mean_Value = round(device_type_summary[[paste0(metric, "_mean")]][best_idx], 2),
+    Significant = ifelse(is_significant, "Yes", "No")
+  ))
+}
+
+cat("\nBest Performing Device Types for Each Metric:\n")
+print(best_performers)
+```
+### Analysis of Visual Complexity Performance
+```{r, fig.width=15, fig.height=10}
+# Create summary statistics for Visual Complexity
+visual_complexity_summary <- data %>%
+  group_by(Visual_Complexity) %>%
+  summarise(across(c(Clicks, Time_Spent, Engagement_Score, 
+                    Conversion_Rate, Bounce_Rate, CTR),
+                  list(
+                    mean = ~mean(.x, na.rm = TRUE),
+                    sd = ~sd(.x, na.rm = TRUE)
+                  )),
+           n = n()) %>%
+  ungroup()
+
+# Print summary statistics
+cat("Summary Statistics by Visual Complexity:\n")
+print(visual_complexity_summary)
+
+# Function to create a single metric plot
+plot_metric <- function(data, metric_name) {
+  ggplot(data, aes(x = Visual_Complexity, y = !!sym(paste0(metric_name, "_mean")))) +
+    geom_bar(stat = "identity", fill = "#228B22", alpha = 0.7) +  # Changed to forest green
+    geom_errorbar(aes(ymin = !!sym(paste0(metric_name, "_mean")) - !!sym(paste0(metric_name, "_sd")),
+                      ymax = !!sym(paste0(metric_name, "_mean")) + !!sym(paste0(metric_name, "_sd"))),
+                  width = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Average", gsub("_", " ", metric_name), "by Visual Complexity"),
+         x = "Visual Complexity",
+         y = paste("Average", gsub("_", " ", metric_name))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5, size = 12))
+}
+
+# Create plots for each metric
+metrics <- c("Clicks", "Time_Spent", "Engagement_Score", 
+            "Conversion_Rate", "Bounce_Rate", "CTR")
+
+plots <- lapply(metrics, function(metric) plot_metric(visual_complexity_summary, metric))
+
+# Display plots in a grid with proper spacing
+grid.arrange(grobs = plots,
+            ncol = 2,
+            widths = c(1, 1),
+            heights = c(1, 1, 1),
+            padding = unit(2, "line"))
+
+# Perform ANOVA tests for each metric
+cat("\nStatistical Analysis for Visual Complexity:\n")
+for (metric in metrics) {
+  cat(paste("\n", gsub("_", " ", metric), "ANOVA Results:\n"))
+  model <- aov(as.formula(paste(metric, "~ Visual_Complexity")), data = data)
+  print(summary(model))
+  
+  # If ANOVA is significant, perform Tukey's test
+  if (summary(model)[[1]]$"Pr(>F)"[1] < 0.05) {
+    cat("\nTukey's HSD Test Results:\n")
+    print(TukeyHSD(model))
+  }
+}
+
+# Create a summary table of best performing visual complexity levels
+best_performers <- data.frame(
+  Metric = character(),
+  Best_Visual_Complexity = character(),
+  Mean_Value = numeric(),
+  Significant = character()
+)
+
+for (metric in metrics) {
+  # Get best performing visual complexity level
+  best_idx <- which.max(visual_complexity_summary[[paste0(metric, "_mean")]])
+  
+  # Check significance
+  model <- aov(as.formula(paste(metric, "~ Visual_Complexity")), data = data)
+  is_significant <- summary(model)[[1]]$"Pr(>F)"[1] < 0.05
+  
+  best_performers <- rbind(best_performers, data.frame(
+    Metric = metric,
+    Best_Visual_Complexity = visual_complexity_summary$Visual_Complexity[best_idx],
+    Mean_Value = round(visual_complexity_summary[[paste0(metric, "_mean")]][best_idx], 2),
+    Significant = ifelse(is_significant, "Yes", "No")
+  ))
+}
+
+cat("\nBest Performing Visual Complexity Levels for Each Metric:\n")
+print(best_performers)
+```
+### Analysis of User Movement Performance
+```{r, fig.width=15, fig.height=10}
+# Create summary statistics for User Movement
+user_movement_summary <- data %>%
+  group_by(User_Movement_Data) %>%
+  summarise(across(c(Clicks, Time_Spent, Engagement_Score, 
+                    Conversion_Rate, Bounce_Rate, CTR),
+                  list(
+                    mean = ~mean(.x, na.rm = TRUE),
+                    sd = ~sd(.x, na.rm = TRUE)
+                  )),
+           n = n()) %>%
+  ungroup()
+
+# Print summary statistics
+cat("Summary Statistics by User Movement:\n")
+print(user_movement_summary)
+
+# Function to create a single metric plot
+plot_metric <- function(data, metric_name) {
+  ggplot(data, aes(x = User_Movement_Data, y = !!sym(paste0(metric_name, "_mean")))) +
+    geom_bar(stat = "identity", fill = "#800080", alpha = 0.7) +  # Changed to purple
+    geom_errorbar(aes(ymin = !!sym(paste0(metric_name, "_mean")) - !!sym(paste0(metric_name, "_sd")),
+                      ymax = !!sym(paste0(metric_name, "_mean")) + !!sym(paste0(metric_name, "_sd"))),
+                  width = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Average", gsub("_", " ", metric_name), "by User Movement"),
+         x = "User Movement",
+         y = paste("Average", gsub("_", " ", metric_name))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(hjust = 0.5, size = 12))
+}
+
+# Create plots for each metric
+metrics <- c("Clicks", "Time_Spent", "Engagement_Score", 
+            "Conversion_Rate", "Bounce_Rate", "CTR")
+
+plots <- lapply(metrics, function(metric) plot_metric(user_movement_summary, metric))
+
+# Display plots in a grid with proper spacing
+grid.arrange(grobs = plots,
+            ncol = 2,
+            widths = c(1, 1),
+            heights = c(1, 1, 1),
+            padding = unit(2, "line"))
+
+# Perform ANOVA tests for each metric
+cat("\nStatistical Analysis for User Movement:\n")
+for (metric in metrics) {
+  cat(paste("\n", gsub("_", " ", metric), "ANOVA Results:\n"))
+  model <- aov(as.formula(paste(metric, "~ User_Movement_Data")), data = data)
+  print(summary(model))
+  
+  # If ANOVA is significant, perform Tukey's test
+  if (summary(model)[[1]]$"Pr(>F)"[1] < 0.05) {
+    cat("\nTukey's HSD Test Results:\n")
+    print(TukeyHSD(model))
+  }
+}
+
+# Create a summary table of best performing user movement types
+best_performers <- data.frame(
+  Metric = character(),
+  Best_User_Movement = character(),
+  Mean_Value = numeric(),
+  Significant = character()
+)
+
+for (metric in metrics) {
+  # Get best performing user movement type
+  best_idx <- which.max(user_movement_summary[[paste0(metric, "_mean")]])
+  
+  # Check significance
+  model <- aov(as.formula(paste(metric, "~ User_Movement_Data")), data = data)
+  is_significant <- summary(model)[[1]]$"Pr(>F)"[1] < 0.05
+  
+  best_performers <- rbind(best_performers, data.frame(
+    Metric = metric,
+    Best_User_Movement = user_movement_summary$User_Movement_Data[best_idx],
+    Mean_Value = round(user_movement_summary[[paste0(metric, "_mean")]][best_idx], 2),
+    Significant = ifelse(is_significant, "Yes", "No")
+  ))
+}
+
+cat("\nBest Performing User Movement Types for Each Metric:\n")
+print(best_performers)
+```
