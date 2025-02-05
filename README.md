@@ -16,13 +16,18 @@
 # PROJECT GOALS
 ### This project aims to explore user engagement trends from different advertisement modes.
 
-1. Data Preparation
+1. Data Preparation ✅
 > *  Cleaning and preprocessing using MySQL
-2. EDA Report using SQL and R
-3. PowerBI Dashboard
+2. EDA Report using SQL and R ✅
+3. PowerBI Dashboard ✅
 > * Create a dashboard for management to assess the effectiveness of different ad campaigns, will later expand it to be updated in real-time
-4. Model Training and Deployment in Python
-5. Automated Metrics Application in Python/SQL/PowerBI
+4. Model Training and Deployment in Python ☐
+5. Automated Metrics Application in Python/SQL/PowerBI ☐
 > * The goal is to create an automatic process with Python that automatically analyzes new data entered into the MySQL Database
 > * From here our data is piped back into the PowerBI dashboard and our pre-trained model will offer more insights
-6. Conclusion
+6. Conclusion ☐
+
+# PowerBI Dashboard
+
+![report_png](https://github.com/user-attachments/assets/4d30b855-d6bf-40ee-91e6-3b35bf308d8f)
+
